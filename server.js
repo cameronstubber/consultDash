@@ -9,7 +9,7 @@ if (process.env.NODE_ENV != "development"){
 }
 
 // All the values we are getting from the ECU
-var rpm, mph, coolantTemp = 0;
+var rpm, kph, coolantTemp = 0;
 
 var currentData= [];
 var frameStarted = false;
@@ -64,17 +64,12 @@ function convertKPH(data){
   return data * 2;
 }
 
-function convertMPH(data){
-  // data * 2 gives KPH
-  return convertKPH(data) * 0.6213711922;
-}
-
 function parseData(data){
 
   if(data !== undefined){
     rpm = convertRPM(data[1], data[2]);
     coolantTemp = convertCoolantTemp(data[0]);
-    mph = convertMPH(data[3]);
+    kph = convertKPH(data[3]);
   }
 
 }
@@ -128,10 +123,11 @@ io.on('connection', function (socket) {
         } else{
           rpm = 0
         }
-        if(mph < 120){
-          mph += 1
+        if(kph < 250)
+        {
+          kph += 1
         } else{
-          mph = 0
+          kph = 0
         }
         if(coolantTemp < 210){
           coolantTemp += 1
@@ -140,6 +136,6 @@ io.on('connection', function (socket) {
         }
       }
 
-      socket.emit('ecuData', {'rpm':Math.floor(rpm),'mph':Math.floor(mph),'coolantTemp':Math.floor(coolantTemp)});
+      socket.emit('ecuData', {'rpm':Math.floor(rpm),'kph':Math.floor(kph),'coolantTemp':Math.floor(coolantTemp)});
     }, 100);
 });
