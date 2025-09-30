@@ -1,6 +1,4 @@
-var PATH_TO_SERIAL_PORT = '';
 var path = require('path');
-var fs = require('fs');
 var express = require('express');
 var serialport = require("serialport");
 var SerialPort = serialport.SerialPort;
