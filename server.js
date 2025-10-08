@@ -4,18 +4,42 @@ var SerialPort = serialport.SerialPort;
 
 const { MongoClient } = require('mongodb');
 
+const password = encodeURIComponent('P@ssword1');
+const username = encodeURIComponent('cameron');
+let prod_mongo_uri = `mongodb+srv://${username}:${password}@bluey-mongo-cluster.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000`
+const serialPortPath = '/dev/ttyUSB0';
+const serialPortBaudRate = 9600;
 
-// Don't set the serialport on development
-if (process.env.NODE_ENV != "development"){
-  var sp = new SerialPort('/dev/ttyUSB0', { baudrate: 9600 });
+
+const db = new MongoClient(prod_mongo_uri);
+
+
+async function getTelemetryCollection() {
+  try {
+    await db.connect();
+    const database = db.db('bluey');
+    return database.collection('telemetry');
+  } catch (err) {
+    console.error('MongoDB connection error:', err);
+    throw err;
+  }
 }
+
+let dbCollection = getTelemetryCollection();
+console.log('Database Connected');
+
+var sp = new SerialPort(serialPortPath, { baudrate: serialPortBaudRate });
 
 // All the values we are getting from the ECU
 var rpm, kph, coolantTemp = 0;
 
+// Globals
 var currentData= [];
 var frameStarted = false;
 var lengthByte;
+var isConnected = false;
+var command = [0x5A,0x08,0x5A,0x00,0x5A,0x01,0x5A,0x0b,0xF0];
+var bytesRequested = (command.length - 1) / 2;
 
 function handleData(data, bytesExpected){
   // create an array of the size of requested data length and fill with requested data
@@ -55,10 +79,7 @@ function convertRPM(mostSignificantBit, leastSignificantBit){
 function convertCoolantTemp(data){
   // Subtract 50 for Celsius
   var celciusCoolantTemp = data - 50;
-  // Convert celcius to fahrenheit
-  var fahrenheitCoolantTemp = celciusCoolantTemp * 1.8 + 32;
-
-  return fahrenheitCoolantTemp;
+  return celciusCoolantTemp;
 }
 
 function convertKPH(data){
@@ -69,92 +90,40 @@ function convertKPH(data){
 function parseData(data){
 
   if(data !== undefined){
-    rpm = convertRPM(data[1], data[2]);
     coolantTemp = convertCoolantTemp(data[0]);
+    rpm = convertRPM(data[1], data[2]);
     kph = convertKPH(data[3]);
   }
 
 }
 
-var isConnected = false;
-var command = [0x5A,0x08,0x5A,0x00,0x5A,0x01,0x5A,0x0b,0xF0];
-var bytesRequested = (command.length - 1) / 2;
+async function pushToDatabase(data) {
+  try {
+    await dbCollection.insertOne(data);
+  } catch (err) {
+    console.error('MongoDB insert error:', err);
+  } 
+};
 
-// Don't run this part for development.
-if (process.env.NODE_ENV != "development"){
-
-  sp.on("open", function () {
-    // Write initialization bytes to the ECU
-    sp.write([0xFF, 0xFF, 0xEF], function(err, results) {});
-    sp.on('data', function(data) {
-      // Check to see if the ECU is connected and has sent the connection confirmation byte "10"
-      if(!isConnected && data.toString('hex') === "10"){
-        console.log("connected");
-        isConnected = true;
-        // Tell the ECU what data we want it to give us
-        sp.write(command, function(err,results){});
-      }else{
-        // Read the data from the stream and parse it
-        parseData(handleData(data, bytesRequested));
-      }
-    });
-  });
-}
-
-// Socket.IO part
-var io = require('socket.io')(server);
-
-io.on('connection', function (socket) {
-  console.log('New client connected!');
-
-    //send data to client
-    setInterval(function(){
-
-      // Change values so you can see it go up when developing
-      if (process.env.NODE_ENV === "development"){
-        if(rpm < 7200){
-          rpm += 11
-        } else{
-          rpm = 0
-        }
-        if(kph < 250)
-        {
-          kph += 1
-        } else{
-          kph = 0
-        }
-        if(coolantTemp < 210){
-          coolantTemp += 1
-        } else{
-          coolantTemp = 0
-        }
-      }
-
-    pushToMongo({
-      rpm: Math.floor(rpm),
-      kph: Math.floor(kph),
-      coolantTemp: Math.floor(coolantTemp),
-      timestamp: new Date()
-    });
-
-    async function pushToMongo(data) {
-      let uri = 'mongodb://cameron:password1@localhost:27017';
-      const password = encodeURIComponent('P@ssword1');
-      uri = `mongodb+srv://cameron:${password}@bluey-mongo-cluster.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000`
-      const client = new MongoClient(uri);
-
-      try {
-        await client.connect();
-        const db = client.db('bluey');
-        const collection = db.collection('telemetry');
-        await collection.insertOne(data);
-      } catch (err) {
-        console.error('MongoDB insert error:', err);
-      } finally {
-        await client.close();
-      }
+sp.on("open", function () {
+  // Write initialization bytes to the ECU
+  sp.write([0xFF, 0xFF, 0xEF], function(err, results) {});
+  sp.on('data', function(data) {
+    // Check to see if the ECU is connected and has sent the connection confirmation byte "10"
+    if(!isConnected && data.toString('hex') === "10"){
+      console.log("Bluey connected");
+      isConnected = true;
+      // Tell the ECU what data we want it to give us
+      sp.write(command, function(err,results){});
+    }else{
+      // Read the data from the stream and parse it
+      parseData(handleData(data, bytesRequested));
+      pushToDatabase({
+        rpm: Math.floor(rpm),
+        kph: Math.floor(kph),
+        coolantTemp: Math.floor(coolantTemp),
+        timestamp: new Date()
+      });
     }
-
-      socket.emit('ecuData', {'rpm':Math.floor(rpm),'kph':Math.floor(kph),'coolantTemp':Math.floor(coolantTemp)});
-    }, 100);
+  });
 });
