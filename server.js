@@ -1,7 +1,9 @@
 var path = require('path');
-var express = require('express');
 var serialport = require("serialport");
 var SerialPort = serialport.SerialPort;
+
+const { MongoClient } = require('mongodb');
+
 
 // Don't set the serialport on development
 if (process.env.NODE_ENV != "development"){
@@ -99,14 +101,6 @@ if (process.env.NODE_ENV != "development"){
   });
 }
 
-// Server part
-var app = express();
-
-app.use('/', express.static(path.join(__dirname, 'public')));
-
-var server = app.listen(8090);
-console.log('Server listening on port 8090');
-
 // Socket.IO part
 var io = require('socket.io')(server);
 
@@ -135,6 +129,31 @@ io.on('connection', function (socket) {
           coolantTemp = 0
         }
       }
+
+    pushToMongo({
+      rpm: Math.floor(rpm),
+      kph: Math.floor(kph),
+      coolantTemp: Math.floor(coolantTemp),
+      timestamp: new Date()
+    });
+
+    async function pushToMongo(data) {
+      let uri = 'mongodb://cameron:password1@localhost:27017';
+      const password = encodeURIComponent('P@ssword1');
+      uri = `mongodb+srv://cameron:${password}@bluey-mongo-cluster.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000`
+      const client = new MongoClient(uri);
+
+      try {
+        await client.connect();
+        const db = client.db('bluey');
+        const collection = db.collection('telemetry');
+        await collection.insertOne(data);
+      } catch (err) {
+        console.error('MongoDB insert error:', err);
+      } finally {
+        await client.close();
+      }
+    }
 
       socket.emit('ecuData', {'rpm':Math.floor(rpm),'kph':Math.floor(kph),'coolantTemp':Math.floor(coolantTemp)});
     }, 100);
