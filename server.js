@@ -25,10 +25,59 @@ async function getTelemetryCollection() {
   }
 }
 
-let dbCollection = getTelemetryCollection();
-console.log('Database Connected');
+let dbCollection;
+let sp;
 
-var sp = new SerialPort(serialPortPath, { baudrate: serialPortBaudRate });
+getTelemetryCollection().then(collection => {
+  dbCollection = collection;
+  console.log('Database Connected');
+  
+  // Initialize serial port after database is ready
+  try {
+    sp = new SerialPort(serialPortPath, { baudrate: serialPortBaudRate });
+    
+    sp.on("open", function () {
+      console.log('Serial port opened successfully');
+      // Write initialization bytes to the ECU
+      sp.write([0xFF, 0xFF, 0xEF], function(err, results) {});
+      sp.on('data', function(data) {
+        // Check to see if the ECU is connected and has sent the connection confirmation byte "10"
+        if(!isConnected && data.toString('hex') === "10"){
+          console.log("Bluey connected");
+          isConnected = true;
+          // Tell the ECU what data we want it to give us
+          sp.write(command, function(err,results){});
+        }else{
+          // Read the data from the stream and parse it
+          let handledData = handleData(data, bytesRequested);
+          if(handledData) {
+            parseData(handledData);
+            pushToDatabase({
+              rpm: Math.floor(rpm),
+              kph: Math.floor(kph),
+              coolantTemp: Math.floor(coolantTemp),
+              timestamp: new Date()
+            });
+          }
+        }
+      });
+    });
+    
+    sp.on("error", function(err) {
+      console.error('Serial port error:', err.message);
+      console.error('Make sure the device is connected at:', serialPortPath);
+      process.exit(1);
+    });
+    
+  } catch (err) {
+    console.error('Failed to initialize serial port:', err.message);
+    console.error('Check if device exists at:', serialPortPath);
+    process.exit(1);
+  }
+}).catch(err => {
+  console.error('Failed to initialize database:', err);
+  process.exit(1);
+});
 
 // All the values we are getting from the ECU
 var rpm, kph, coolantTemp = 0;
@@ -104,26 +153,3 @@ async function pushToDatabase(data) {
     console.error('MongoDB insert error:', err);
   } 
 };
-
-sp.on("open", function () {
-  // Write initialization bytes to the ECU
-  sp.write([0xFF, 0xFF, 0xEF], function(err, results) {});
-  sp.on('data', function(data) {
-    // Check to see if the ECU is connected and has sent the connection confirmation byte "10"
-    if(!isConnected && data.toString('hex') === "10"){
-      console.log("Bluey connected");
-      isConnected = true;
-      // Tell the ECU what data we want it to give us
-      sp.write(command, function(err,results){});
-    }else{
-      // Read the data from the stream and parse it
-      parseData(handleData(data, bytesRequested));
-      pushToDatabase({
-        rpm: Math.floor(rpm),
-        kph: Math.floor(kph),
-        coolantTemp: Math.floor(coolantTemp),
-        timestamp: new Date()
-      });
-    }
-  });
-});
