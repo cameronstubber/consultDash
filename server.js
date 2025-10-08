@@ -88,6 +88,19 @@ var currentData= [];
 var frameStarted = false;
 var lengthByte;
 var isConnected = false;
+
+// Extra Registers to test later
+// 0x0c = Battery Voltage - * 80 => mV
+// 0x0d = Throttle Position Sensor = * 20 => mV
+// 0x0f = Fuel Temp Sensor = -50 => Celsius
+// 0x11 = Intake Air Temp Sensor = -50 => Celsius
+// 0x2f = Fuel Gauge Voltage
+
+// Command to send to the ECU to get the data we want
+// 0x5A 0x08 - Coolant Temp
+// 0x5A 0x00 0x5A 0x01 - RPM
+// 0x5A 0x0b - Vehicle Speed
+// 0xF0 - End of frame
 var command = [0x5A,0x08,0x5A,0x00,0x5A,0x01,0x5A,0x0b,0xF0];
 var bytesRequested = (command.length - 1) / 2;
 
