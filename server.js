@@ -1,14 +1,15 @@
 var path = require('path');
+require('dotenv').config();
 var serialport = require("serialport");
 var SerialPort = serialport.SerialPort;
 
 const { MongoClient } = require('mongodb');
 
-const password = encodeURIComponent('P@ssword1');
-const username = encodeURIComponent('cameron');
+const password = encodeURIComponent(process.env.DB_PASSWORD);
+const username = encodeURIComponent(process.env.DB_USERNAME);
 let prod_mongo_uri = `mongodb+srv://${username}:${password}@bluey-mongo-cluster.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000`
-const serialPortPath = '/dev/ttyUSB0';
-const serialPortBaudRate = 9600;
+const serialPortPath = process.env.SERIAL_PORT_PATH;
+const serialPortBaudRate = parseInt(process.env.SERIAL_PORT_BAUDRATE);
 
 
 const db = new MongoClient(prod_mongo_uri);
