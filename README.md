@@ -1,1 +1,1 @@
-# Bluey Temetry Server
+# Bluey Telemetry Server
